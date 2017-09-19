@@ -2,8 +2,8 @@
 //  ViewController.swift
 //  TheWeatherApp
 //
-//  Created by wehiremac on 16/09/2017.
-//  Copyright © 2017 wehiremac. All rights reserved.
+//  Created by Maniu Suroiu on 16/09/2017.
+//  Copyright © 2017 Maniu Suroiu. All rights reserved.
 //
 
 import UIKit
@@ -24,11 +24,35 @@ class CurrentLocationViewController: UIViewController {
   var lastLocation: CLLocation?
   var updatingLocation = false
   var placemark: CLPlacemark?
+  var performingReverseGeocoding = false
   
+  let searchWeather = SearchWeather()
   
   override func viewDidLoad() {
     super.viewDidLoad()
     updateLabels()
+    configureGetMyLocationButton()
+    weatherForecastButton.layer.borderWidth = 1
+    weatherForecastButton.layer.cornerRadius = 10
+    getMyLocationButton.layer.borderWidth = 1
+    getMyLocationButton.layer.cornerRadius = 10
+  }
+  
+  override func prepare(for segue: UIStoryboardSegue, sender: Any?) {
+    if segue.identifier == "ShowCollection" {
+      let controller = segue.destination as! ShowTemperatureViewController
+      
+      searchWeather.performSearch() {
+        
+        success in
+        
+        DispatchQueue.main.async {
+          controller.activityIndicator.removeFromSuperview()
+          controller.searchWeather = self.searchWeather
+          controller.collectionView?.reloadData()
+        }
+      }
+    }
   }
   
   /* determines the location authorization status and performs a certain action associated with that status */
@@ -50,6 +74,8 @@ class CurrentLocationViewController: UIViewController {
         startLocationManager()
       }
     }
+    updateLabels()
+    configureGetMyLocationButton()
   }
   
   func showLocationServicesDeniedAlert() {
@@ -104,11 +130,48 @@ class CurrentLocationViewController: UIViewController {
       longitudeLabel.text = String(format: "%.8f", location.coordinate.longitude)
       weatherForecastButton.isHidden = false
       messageLabel.text = ""
+      
+      if let placemark = placemark {
+        addressLabel.text = string(from: placemark)
+      } else if performingReverseGeocoding {
+        addressLabel.text = "Searching for Address..."
+      } else {
+        addressLabel.text = "Error finding address"
+      }
+      
     } else {
       latitudeLabel.text = ""
       longitudeLabel.text = ""
+      addressLabel.text = ""
       weatherForecastButton.isHidden = true
-      messageLabel.text = "Tap 'Get My Location' to start"
+      
+      if updatingLocation {
+        messageLabel.text = "Searching..."
+      } else {
+        messageLabel.text = "Tap 'Get My Location' to start"
+      }
+    }
+  }
+  
+  func string(from placemark: CLPlacemark) -> String {
+    var line1 = ""
+    line1.add(text: placemark.subThoroughfare)
+    line1.add(text: placemark.thoroughfare, separatedBy: " ")
+    
+    var line2 = ""
+    line2.add(text: placemark.locality)
+    line2.add(text: placemark.administrativeArea, separatedBy: " ")
+    line2.add(text: placemark.postalCode, separatedBy: " ")
+    
+    line1.add(text: line2, separatedBy: "\n")
+    return line1
+  }
+  
+  func configureGetMyLocationButton() {
+    if updatingLocation {
+      getMyLocationButton.setTitle("Stop", for: .normal)
+    } else {
+      getMyLocationButton.setTitle("Get My Location", for: .normal)
     }
   }
 }
@@ -145,6 +208,10 @@ extension CurrentLocationViewController: CLLocationManagerDelegate {
       alert.addAction(okAction)
       present(alert, animated: true, completion: nil)
     }
+    
+    stopLocationManager()
+    updateLabels()
+    configureGetMyLocationButton()
   }
   
   /* tells the delegate that new location data is available while storing it in a [ClLocation] array */
@@ -152,8 +219,34 @@ extension CurrentLocationViewController: CLLocationManagerDelegate {
     let newLocation = locations.last!
     print("didUpdateLocations \(newLocation)")
     lastLocation = newLocation
-    updateLabels()
+    searchWeather.location = newLocation
+    
+    if !performingReverseGeocoding {
+      print("*** Starting to geocode")
+      
+      performingReverseGeocoding = true
+      
+      geocoder.reverseGeocodeLocation(newLocation, completionHandler: { placemarks, error in
+        print("*** Found placemarks: \(String(describing: placemarks)), error: \(String(describing: error))")
+        
+        if error == nil, let placemark = placemarks, !placemark.isEmpty {
+          self.placemark = placemark.last!
+        } else {
+          self.placemark = nil
+        }
+        self.performingReverseGeocoding = false
+        self.updateLabels()
+      })
+    }
   }
-
 }
+
+
+
+
+
+
+
+
+
 
